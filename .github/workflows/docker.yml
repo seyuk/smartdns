@@ -34,4 +34,4 @@ jobs:
          with:
            platforms: linux/arm/v7
            push: true
-           tags: "pymumu/smartdns:${{ github.event.inputs.version }}"
+           tags: ${{vars.DOCKERHUB_REPO}}:${{ github.event.inputs.version }}
