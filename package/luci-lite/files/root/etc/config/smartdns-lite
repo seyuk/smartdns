@@ -1,3 +1,0 @@
-config 'smartdns-lite'
-	option 'enabled' '0'
-	
