@@ -1,45 +1,25 @@
-FROM ubuntu:latest as smartdns-builder
-LABEL previous-stage=smartdns-builder
+# Dockerfile - alpine-arm32v7
 
-# prepare builder
-ARG OPENSSL_VER=3.0.10
-RUN apt update && \
-    apt install -y binutils perl curl make musl-tools musl-dev && \
-    ln -s /usr/include/linux /usr/include/$(uname -m)-linux-musl && \
-    ln -s /usr/include/asm-generic /usr/include/$(uname -m)-linux-musl && \
-    ln -s /usr/include/$(uname -m)-linux-gnu/asm /usr/include/$(uname -m)-linux-musl && \
-    \
-    mkdir -p /build/openssl && \
-    cd /build/openssl && \
-    curl -sSL http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_${OPENSSL_VER}.orig.tar.gz | tar --strip-components=1 -zxv && \
-    \
-    export CC=musl-gcc && \
-    if [ "$(uname -m)" = "aarch64" ]; then \
-        ./config --prefix=/opt/build no-tests -mno-outline-atomics ; \
-    else \ 
-        ./config --prefix=/opt/build no-tests ; \
-    fi && \
-    make all -j8 && make install_sw && \
-    cd / && rm -rf /build
+ARG RESTY_IMAGE_BASE="arm32v7/alpine"
+ARG RESTY_IMAGE_TAG="3.18"
 
-# do make
-COPY . /build/smartdns/
-RUN cd /build/smartdns && \
-    export CC=musl-gcc && \
-    export CFLAGS="-I /opt/build/include" && \
-    export LDFLAGS="-L /opt/build/lib -L /opt/build/lib64" && \
-    sh ./package/build-pkg.sh --platform linux --arch `dpkg --print-architecture` --static && \
-    \
-    ( cd package && tar -xvf *.tar.gz && chmod a+x smartdns/etc/init.d/smartdns ) && \
-    \
-    mkdir -p /release/var/log /release/run && \
-    cp package/smartdns/etc /release/ -a && \
-    cp package/smartdns/usr /release/ -a && \
-    cd / && rm -rf /build
+FROM ${RESTY_IMAGE_BASE}:${RESTY_IMAGE_TAG}
 
-FROM busybox:stable-musl
-COPY --from=smartdns-builder /release/ /
+# Docker Build
+
+ARG APK_MIRROR="mirrors.aliyun.com"
+ARG GITHUB_MIRROR="https://ghproxy.net/https://github.com/"
+RUN sed -i "s/https:\/\/dl-cdn.alpinelinux.org/https:\/\/${APK_MIRROR}/g" /etc/apk/repositories
+RUN apk add wget
+
+RUN mkdir /var/run/smartdns && \
+    mkdir /etc/smartdns/ && \
+    tag=$(wget -qO- -t1 -T2 "https://api.github.com/repos/pymumu/smartdns/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g') && \
+    wget --no-check-certificate -qO "/var/run/smartdns/smartdns" "${GITHUB_MIRROR}/pymumu/smartdns/releases/download/${tag}/smartdns-arm" && \
+    chmod 777 /var/run/smartdns/smartdns && \
+    apk del wget
 EXPOSE 53/udp
-VOLUME ["/etc/smartdns/"]
+VOLUME [ "/etc/smartdns/" ]
+CMD ["/var/run/smartdns/smartdns", "-f", "-x"]
 
-CMD ["/usr/sbin/smartdns", "-f", "-x"]
+STOPSIGNAL SIGQUIT
